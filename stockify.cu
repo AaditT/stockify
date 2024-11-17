@@ -83,6 +83,9 @@ filter1, filter2, filter3 basically represent equality comparisons here
 */
 
 // filter functions
+
+
+
 __global__ void filterStocksByVolume(StockData* stocks, bool* results, int size, float minVolume) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) { results[index] = stocks[index].volume >= minVolume; }
@@ -160,14 +163,32 @@ __global__ void getMinLowPrice(StockData* stocks, float* result, int size, int s
 
 
 // get maximum high price
+
+
+
+
 __global__ void getMaxHighPrice(StockData* stocks, float* result, int size, int sizeOfWindow) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < size) {
-        float max = stocks[i].highPrice;
+
+    // experimenting with shared memory
+
+
+    extern __shared__ StockData sharedData[];
+    int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
+    int localIdx = threadIdx.x;
+    if (globalIdx < size) {
+        sharedData[localIdx] = stocks[globalIdx];
+    }
+    // wait for threads to stop executing
+
+    __syncthreads();
+    if (globalIdx < size) {
+        float max = sharedData[localIdx].highPrice;
         for (int i = 0; i < sizeOfWindow; i++) {
-            if (stocks[i + i].highPrice > max) { max = stocks[i + i].highPrice; }
+            if (sharedData[i + localIdx].highPrice > max) {
+                max = sharedData[i + localIdx].highPrice;
+            }
         }
-        result[i] = max;
+        result[globalIdx] = max;
     }
 }
 
@@ -183,6 +204,8 @@ int main() {
     float* agg_results;
 
     // moving to gpu
+
+
     cudaMalloc(&d_stocks, size * sizeof(StockData));
     cudaMalloc(&d_results, size * sizeof(bool));
     cudaMalloc(&agg_results, size * sizeof(float));
@@ -221,7 +244,25 @@ int main() {
     cudaEventElapsedTime(&milliseconds, start_gpu, stop);
     std::cout << "GPU filter by volume: " << milliseconds << "ms\n";
     printOutSpeedup(elapsed.count(), milliseconds);
+
+    // accuracy check
+    std::vector<char> resultsGpu(size);
+    cudaMemcpy(resultsGpu.data(), d_results, size * sizeof(bool), cudaMemcpyDeviceToHost);
+    bool match = true;
+    for (int i = 0; i < size; i++) {
+        if (results[i] != resultsGpu[i]) {
+            match = false;
+            break;
+        }
+    }
+    if (match) {
+        std::cout << "Results match\n";
+    }
+
+    
+
     std::cout << "---------------------\n";
+
 
 
     // EXPERIMENT 1.b:
@@ -248,6 +289,20 @@ int main() {
     cudaEventElapsedTime(&milliseconds, start_gpu2, stop2);
     std::cout << "GPU filter by close price: " << milliseconds << "ms\n";
     printOutSpeedup(elapsed2.count(), milliseconds);
+
+    std::vector<char> resultsGpu2(size);
+    cudaMemcpy(resultsGpu2.data(), d_results, size * sizeof(bool), cudaMemcpyDeviceToHost);
+    match = true;
+    for (int i = 0; i < size; i++) {
+        if (results[i] != resultsGpu2[i]) {
+            match = false;
+            break;
+        }
+    }
+    if (match) {
+        std::cout << "Results match\n";
+    }
+
     std::cout << "---------------------\n";
 
     
@@ -275,6 +330,20 @@ int main() {
     cudaEventElapsedTime(&milliseconds22, start_gpu22, stop22);
     std::cout << "GPU filter by open price: " << milliseconds22 << "ms\n";
     printOutSpeedup(elapsed22.count(), milliseconds22);
+
+    std::vector<char> resultsGpu22(size);
+    cudaMemcpy(resultsGpu22.data(), d_results, size * sizeof(bool), cudaMemcpyDeviceToHost);
+    match = true;
+    for (int i = 0; i < size; i++) {
+        if (results[i] != resultsGpu22[i]) {
+            match = false;
+            break;
+        }
+    }
+    if (match) {
+        std::cout << "Results match\n";
+    }
+
     std::cout << "---------------------\n";
 
     // EXPERIMENT 1.d:
@@ -301,6 +370,20 @@ int main() {
     cudaEventElapsedTime(&milliseconds3, start_gpu3, stop3);
     std::cout << "GPU filter by high price: " << milliseconds3 << "ms\n";
     printOutSpeedup(elapsed3.count(), milliseconds3);
+
+    std::vector<char> resultsGpu3(size);
+    cudaMemcpy(resultsGpu3.data(), d_results, size * sizeof(bool), cudaMemcpyDeviceToHost);
+    match = true;
+    for (int i = 0; i < size; i++) {
+        if (results[i] != resultsGpu3[i]) {
+            match = false;
+            break;
+        }
+    }
+    if (match) {
+        std::cout << "Results match\n";
+    }
+
     std::cout << "---------------------\n";
 
     // EXPERIMENT 1.e:
@@ -327,6 +410,20 @@ int main() {
     cudaEventElapsedTime(&milliseconds4, start_gpu4, stop4);
     std::cout << "GPU filter by low price: " << milliseconds4 << "ms\n";
     printOutSpeedup(elapsed4.count(), milliseconds4);
+
+    std::vector<char> resultsGpu4(size);
+    cudaMemcpy(resultsGpu4.data(), d_results, size * sizeof(bool), cudaMemcpyDeviceToHost);
+    match = true;
+    for (int i = 0; i < size; i++) {
+        if (results[i] != resultsGpu4[i]) {
+            match = false;
+            break;
+        }
+    }
+    if (match) {
+        std::cout << "Results match\n";
+    }
+
     std::cout << "---------------------\n";
 
     // EXPERIMENT 1.f:
@@ -353,7 +450,22 @@ int main() {
     cudaEventElapsedTime(&milliseconds5, start_gpu5, stop5);
     std::cout << "GPU filter by high price and low price: " << milliseconds5 << "ms\n";
     printOutSpeedup(elapsed5.count(), milliseconds5);
+
+    std::vector<char> resultsGpu5(size);
+    cudaMemcpy(resultsGpu5.data(), d_results, size * sizeof(bool), cudaMemcpyDeviceToHost);
+    match = true;
+    for (int i = 0; i < size; i++) {
+        if (results[i] != resultsGpu5[i]) {
+            match = false;
+            break;
+        }
+    }
+    if (match) {
+        std::cout << "Results match\n";
+    }
+
     std::cout << "---------------------\n";
+    std::cout << "\n";
 
     // EXPERIMENT 2.a:
     // CPU vs. GPU Sum of Low Prices
@@ -380,6 +492,18 @@ int main() {
     cudaEventElapsedTime(&milliseconds6, start_gpu6, stop6);
     std::cout << "GPU sum of low prices: " << milliseconds6 << "ms\n";
     std::cout << "Speedup: " << elapsed6.count() / milliseconds6 << "x\n";
+
+    std::vector<float> resultsGpu6(size);
+    cudaMemcpy(resultsGpu6.data(), agg_results, size * sizeof(float), cudaMemcpyDeviceToHost);
+    float sumGpu = 0;
+    for (int i = 0; i < size; i++) {
+        sumGpu += resultsGpu6[i];
+    }
+    if (sum == sumGpu) {
+        std::cout << "Results match\n";
+    }
+
+
     std::cout << "---------------------\n";
 
     // EXPERIMENT 2.b:
@@ -411,6 +535,18 @@ int main() {
     cudaEventElapsedTime(&milliseconds7, start_gpu7, stop7);
     std::cout << "GPU moving average: " << milliseconds7 << "ms\n";
     std::cout << "Speedup: " << elapsed7.count() / milliseconds7 << "x\n";
+
+    std::vector<float> resultsGpu7(size);
+    cudaMemcpy(resultsGpu7.data(), agg_results, size * sizeof(float), cudaMemcpyDeviceToHost);
+    float sumGpu7 = 0;
+    for (int i = 0; i < size; i++) {
+        sumGpu7 += resultsGpu7[i];
+    }
+    if (sum == sumGpu7) {
+        std::cout << "Results match\n";
+    }
+
+
     std::cout << "---------------------\n";
 
     // EXPERIMENT 2.c:
@@ -440,9 +576,73 @@ int main() {
     cudaEventElapsedTime(&milliseconds8, start_gpu8, stop8);
     std::cout << "GPU minimum low price: " << milliseconds8 << "ms\n";
     std::cout << "Speedup: " << elapsed8.count() / milliseconds8 << "x\n";
+
+    std::vector<float> resultsGpu8(size);
+    cudaMemcpy(resultsGpu8.data(), agg_results, size * sizeof(float), cudaMemcpyDeviceToHost);
+    float minGpu = resultsGpu8[0];
+    for (int i = 0; i < size; i++) {
+        if (resultsGpu8[i] < minGpu) {
+            minGpu = resultsGpu8[i];
+        }
+    }
+    if (minLowPrice == minGpu) {
+        std::cout << "Results match\n";
+    }
+
+
+    std::cout << "---------------------\n";
+
+    // EXPERIMENT 2.d:
+    // CPU vs. GPU Maximum High Price
+
+    // cpu maximum high price
+    auto start9 = std::chrono::high_resolution_clock::now();
+    float maxHighPrice = stocks[0].highPrice;
+    for (int i = 0; i < size; i++) {
+        if (stocks[i].highPrice > maxHighPrice) {
+            maxHighPrice = stocks[i].highPrice;
+        }
+    }
+    auto end9 = std::chrono::high_resolution_clock::now();
+    auto elapsed9 = std::chrono::duration_cast<std::chrono::milliseconds>(end9 - start9);
+    std::cout << "CPU maximum high price: " << elapsed9.count() << "ms\n";
+
+    // gpu maximum high price
+    cudaEvent_t start_gpu9, stop9;
+    cudaEventCreate(&start_gpu9);
+    cudaEventCreate(&stop9);
+    cudaEventRecord(start_gpu9);
+    getMaxHighPrice<<<(size + 255) / 256, 256, 256 * sizeof(StockData)>>>(d_stocks, agg_results, size, 10);
+    cudaEventRecord(stop9);
+    cudaEventSynchronize(stop9);
+    float milliseconds9 = 0;
+    cudaEventElapsedTime(&milliseconds9, start_gpu9, stop9);
+    std::cout << "GPU maximum high price: " << milliseconds9 << "ms\n";
+    std::cout << "Speedup: " << elapsed9.count() / milliseconds9 << "x\n";
+
+    std::vector<float> resultsGpu9(size);
+    cudaMemcpy(resultsGpu9.data(), agg_results, size * sizeof(float), cudaMemcpyDeviceToHost);
+    float maxGpu = resultsGpu9[0];
+    for (int i = 0; i < size; i++) {
+        if (resultsGpu9[i] > maxGpu) {
+            maxGpu = resultsGpu9[i];
+        }
+    }
+    if (maxHighPrice == maxGpu) {
+        std::cout << "Results match\n";
+    }
+    std::cout << "---------------------\n";
+    std::cout << "\n";
+
+
     std::cout << "----------sorted vector-based index-----------\n";
 
+
     // EXPERIMENT 3
+
+    /*
+    here i try using a sorted vector list as an index
+    */
 
     std::vector<StockData> stocks2(10000000);
     for (int i = 0; i < stocks2.size(); ++i) {
@@ -496,7 +696,16 @@ int main() {
     std::cout << "Linear search: " << elapsedLinearSearch.count() << "ms\n";
 
 
+
+
+
     // EXPERIMENT 3.1
+
+    /*
+    here i implmement a map-based index
+    std::map used red black tree as backing structure
+    */
+
     std::cout << "----------map-based index-----------\n";
     auto startIndexBuildMap = std::chrono::high_resolution_clock::now();
     std::map<float, StockData> sortedIndexMap;
